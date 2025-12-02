@@ -39,3 +39,10 @@
 
 # debug information files
 *.dwo
+
+.idea
+
+models/*.onnx
+measurements/*.txt
+reports/*.txt
+onnxruntime
