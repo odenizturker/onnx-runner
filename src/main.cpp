@@ -3,7 +3,9 @@
 #include <vector>
 #include <filesystem>
 #include <chrono>
+#include <thread>
 #include <random>
+#include <cstdlib>
 #include <onnxruntime_cxx_api.h>
 
 namespace fs = std::filesystem;
@@ -50,11 +52,14 @@ void run_onnx_inference(const std::string& model_path) {
     }
 
     std::vector<const char*> input_names = {input_name.get()};
+
+    // Store output names properly to avoid memory issues
+    std::vector<Ort::AllocatedStringPtr> output_name_ptrs;
     std::vector<const char*> output_names;
 
     for (size_t i = 0; i < num_output_nodes; i++) {
-        auto name = session.GetOutputNameAllocated(i, allocator);
-        output_names.push_back(name.get());
+        output_name_ptrs.push_back(session.GetOutputNameAllocated(i, allocator));
+        output_names.push_back(output_name_ptrs.back().get());
     }
 
     Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -70,16 +75,18 @@ void run_onnx_inference(const std::string& model_path) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        std::cerr << "Usage: ./onnx_runner <onnx_filename> <duration_seconds>\n";
+    if (argc != 5) {
+        std::cerr << "Usage: ./onnx_runner <onnx_filename> <warmup_seconds> <silence_seconds> <measurement_seconds>\n";
         return 1;
     }
 
     std::string model_filename = argv[1];
-    int duration_seconds = std::atoi(argv[2]);
+    int warmup_seconds = std::atoi(argv[2]);
+    int silence_seconds = std::atoi(argv[3]);
+    int measurement_seconds = std::atoi(argv[4]);
 
-    if (duration_seconds <= 0) {
-        std::cerr << "Error: Duration must be positive integer\n";
+    if (warmup_seconds < 0 || silence_seconds < 0 || measurement_seconds <= 0) {
+        std::cerr << "Error: Durations must be non-negative (measurement must be positive)\n";
         return 1;
     }
 
@@ -92,33 +99,87 @@ int main(int argc, char** argv) {
     }
 
     using clock = std::chrono::steady_clock;
-    uint64_t iterations = 0;
 
-    auto start = clock::now();
-    auto deadline = start + std::chrono::seconds(duration_seconds);
+    std::cout << "=== Starting 3-Phase Benchmark ===\n";
+    std::cout << "Model: " << model_filename << "\n";
+    std::cout << "Phase 1 (Warmup): " << warmup_seconds << "s\n";
+    std::cout << "Phase 2 (Silence): " << silence_seconds << "s\n";
+    std::cout << "Phase 3 (Measurement): " << measurement_seconds << "s\n";
+    std::cout << "===================================\n\n";
 
-    // Run inference until deadline
-    while (clock::now() < deadline) {
+    // Phase 1: Warmup
+    if (warmup_seconds > 0) {
+        std::cout << "[Phase 1/3] Warmup (" << warmup_seconds << "s)...\n";
+        uint64_t warmup_iterations = 0;
+        auto start = clock::now();
+        auto deadline = start + std::chrono::seconds(warmup_seconds);
+
+        while (clock::now() < deadline) {
+            try {
+                run_onnx_inference(model_path.string());
+                ++warmup_iterations;
+            } catch (const Ort::Exception& e) {
+                std::cerr << "ONNX Runtime error during warmup: " << e.what() << "\n";
+                return -1;
+            }
+        }
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - start).count();
+        std::cout << "  ✓ Warmup completed (" << warmup_iterations << " iterations, "
+                  << elapsed << "ms)\n\n";
+    }
+
+    // Phase 2: Silence - just wait for system stabilization
+    if (silence_seconds > 0) {
+        std::cout << "[Phase 2/3] Silence (" << silence_seconds << "s)...\n";
+        std::this_thread::sleep_for(std::chrono::seconds(silence_seconds));
+        std::cout << "  ✓ Silence completed\n\n";
+    }
+
+    // Reset battery statistics before measurement
+    std::cout << "[Phase 2.5/3] Resetting battery statistics...\n";
+    int reset_result = system("dumpsys batterystats --reset > /dev/null 2>&1");
+    if (reset_result == 0) {
+        std::cout << "  ✓ Battery statistics reset\n\n";
+    } else {
+        std::cerr << "  ⚠ Warning: Failed to reset battery statistics (code: "
+                  << reset_result << ")\n\n";
+    }
+
+    // Small delay to ensure stats are reset
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // Phase 3: Measurement
+    std::cout << "[Phase 3/3] Measurement (" << measurement_seconds << "s)...\n";
+    uint64_t measurement_iterations = 0;
+    auto measurement_start = clock::now();
+    auto measurement_deadline = measurement_start + std::chrono::seconds(measurement_seconds);
+
+    while (clock::now() < measurement_deadline) {
         try {
             run_onnx_inference(model_path.string());
-            ++iterations;
+            ++measurement_iterations;
         } catch (const Ort::Exception& e) {
-            std::cerr << "ONNX Runtime error: " << e.what() << "\n";
+            std::cerr << "ONNX Runtime error during measurement: " << e.what() << "\n";
             return -1;
         }
     }
 
-    auto end = clock::now();
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    auto measurement_end = clock::now();
+    auto measurement_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        measurement_end - measurement_start).count();
 
-    // Output results
+    std::cout << "  ✓ Measurement completed\n\n";
+
+    // Output final results
     std::cout << "=== Benchmark Results ===\n";
     std::cout << "Model: " << model_filename << "\n";
-    std::cout << "Duration: " << duration_seconds << "s\n";
-    std::cout << "Iterations: " << iterations << "\n";
-    std::cout << "Elapsed (ms): " << elapsed_ms << "\n";
+    std::cout << "Measurement Duration: " << measurement_seconds << "s\n";
+    std::cout << "Iterations: " << measurement_iterations << "\n";
+    std::cout << "Elapsed (ms): " << measurement_elapsed_ms << "\n";
 
-    double throughput = static_cast<double>(iterations) * 1000.0 / static_cast<double>(elapsed_ms);
+    double throughput = static_cast<double>(measurement_iterations) * 1000.0 /
+                      static_cast<double>(measurement_elapsed_ms);
     std::cout << "Throughput: " << throughput << " inf/s\n";
 
     return 0;

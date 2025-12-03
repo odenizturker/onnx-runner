@@ -41,10 +41,21 @@ if [ -d "${ONNXRUNTIME_DIR}/jni" ]; then
   done
 fi
 
-shopt -s nullglob
-for f in ./models/*.onnx; do
-  echo "Pushing ${f} -> ${DEVICE_DIR}/"
-  adb push "${f}" "${DEVICE_DIR}/"
+echo "Pushing all .onnx models (including subdirectories)..."
+# Use find to get all .onnx files recursively
+find ./models -name "*.onnx" -type f | while read -r model_path; do
+  # Get path relative to ./models (e.g., "subfolder/model.onnx" or "model.onnx")
+  relative_path="${model_path#./models/}"
+
+  # Create subdirectory on device if needed
+  model_dir=$(dirname "${relative_path}")
+  if [ "${model_dir}" != "." ]; then
+    echo "  Creating directory: ${DEVICE_DIR}/${model_dir}"
+    adb shell "mkdir -p ${DEVICE_DIR}/${model_dir}" || true
+  fi
+
+  echo "  Pushing ${model_path} -> ${DEVICE_DIR}/${relative_path}"
+  adb push "${model_path}" "${DEVICE_DIR}/${relative_path}"
 done
 
 echo "Done. Binary and models are on device."

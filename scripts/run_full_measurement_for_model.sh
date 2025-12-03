@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 # Run full measurement for a single model with precise battery stats timing:
-# - 6s warmup (no battery measurement)
-# - 6s silent (no battery measurement)
-# - Battery stats reset
-# - 48s measurement (with battery measurement)
-# - Export battery stats
+# The binary now handles all three phases internally:
+# - warmup (cache warm-up)
+# - silence (system stabilization)
+# - batterystats reset
+# - measurement (with battery measurement)
 
 set -euo pipefail
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $0 <onnx_filename>"
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: $0 <onnx_path_relative_to_models> [run_index]"
+  echo "Example: $0 model.onnx"
+  echo "Example: $0 subfolder/model.onnx 2"
   exit 1
 fi
 
-ONNX_NAME="$1"
+ONNX_RELATIVE_PATH="$1"
+RUN_INDEX="${2:-}"  # Optional run index
 DEVICE_BIN="/data/local/tmp/onnx_runner"
 OUTPUT_DIR="./measurements"
 
@@ -27,52 +30,38 @@ log() {
 }
 
 # Check if model exists locally
-if [ ! -f "./models/${ONNX_NAME}" ]; then
-    log "ERROR: Model file not found: ./models/${ONNX_NAME}"
+if [ ! -f "./models/${ONNX_RELATIVE_PATH}" ]; then
+    log "ERROR: Model file not found: ./models/${ONNX_RELATIVE_PATH}"
     exit 1
+fi
+
+# Create safe filename for output (replace / with _)
+SAFE_FILENAME="${ONNX_RELATIVE_PATH//\//_}"
+
+# Add run index to filename if provided
+if [ -n "$RUN_INDEX" ]; then
+    SAFE_FILENAME="${SAFE_FILENAME}_run${RUN_INDEX}"
 fi
 
 mkdir -p "$OUTPUT_DIR"
 
-log "Starting measurement for: ${ONNX_NAME}"
+log "Starting 3-phase measurement for: ${ONNX_RELATIVE_PATH}"
 log "============================================================"
 
-# Phase 1: Warmup - no measurement
-log "Phase 1: Warmup (${WARMUP_DURATION}s)..."
-adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ${DEVICE_BIN} ${ONNX_NAME} ${WARMUP_DURATION}" > /dev/null 2>&1 || {
-    log "  ✗ Warmup failed"
+# Run all three phases in a single program execution
+# This keeps caches warm across phases
+log "Running benchmark (warmup → silence → reset → measurement)..."
+adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ${DEVICE_BIN} ${ONNX_RELATIVE_PATH} ${WARMUP_DURATION} ${SILENT_DURATION} ${MEASUREMENT_DURATION}" || {
+    log "  ✗ Benchmark failed"
     exit 1
 }
-log "  ✓ Warmup completed"
 
-# Phase 2: Silent - system stabilization, no measurement
-log "Phase 2: Silent phase (${SILENT_DURATION}s)..."
-adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ${DEVICE_BIN} ${ONNX_NAME} ${SILENT_DURATION}" > /dev/null 2>&1 || {
-    log "  ✗ Silent phase failed"
-    exit 1
-}
-log "  ✓ Silent phase completed"
-
-# Phase 3: Reset battery statistics (only before measurement)
-log "Phase 3: Resetting battery statistics..."
-adb shell dumpsys batterystats --reset > /dev/null 2>&1
-sleep 1
-log "  ✓ Battery statistics reset"
-
-# Phase 4: Measurement - actual power measurement
-log "Phase 4: Running measurement (${MEASUREMENT_DURATION}s)..."
-adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ${DEVICE_BIN} ${ONNX_NAME} ${MEASUREMENT_DURATION}" || {
-    log "  ✗ Measurement failed"
-    exit 1
-}
-log "  ✓ Measurement completed"
-
-# Phase 5: Collect battery statistics
-log "Phase 5: Collecting battery statistics..."
-STATS_FILE="${OUTPUT_DIR}/${ONNX_NAME}_batterystats.txt"
+# Collect battery statistics
+log "Collecting battery statistics..."
+STATS_FILE="${OUTPUT_DIR}/${SAFE_FILENAME}_batterystats.txt"
 adb shell dumpsys batterystats > "$STATS_FILE"
 log "  ✓ Battery statistics saved to: $STATS_FILE"
 
 log "============================================================"
-log "Measurement complete for: ${ONNX_NAME}"
+log "Measurement complete for: ${ONNX_RELATIVE_PATH}"
 

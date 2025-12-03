@@ -30,12 +30,14 @@ if [ ! -d "$MODEL_DIR" ]; then
     exit 1
 fi
 
-# Find all ONNX models
-shopt -s nullglob
-models=("$MODEL_DIR"/*.onnx)
+# Find all ONNX models recursively in subdirectories
+models=()
+while IFS= read -r -d '' model_path; do
+    models+=("$model_path")
+done < <(find "$MODEL_DIR" -name "*.onnx" -type f -print0 | sort -z)
 
 if [ ${#models[@]} -eq 0 ]; then
-    echo "No .onnx models found in $MODEL_DIR"
+    echo "No .onnx models found in $MODEL_DIR (including subdirectories)"
     exit 0
 fi
 
@@ -49,20 +51,32 @@ failed_runs=0
 
 # Iterate through each model
 for modelpath in "${models[@]}"; do
-    modelfile=$(basename "$modelpath")
+    # Get path relative to models/ directory (e.g., "subfolder/model.onnx" or "model.onnx")
+    model_relative="${modelpath#$MODEL_DIR/}"
+
     log ""
-    log "Model: $modelfile (running $RUNS time(s))"
+    log "Model: $model_relative (running $RUNS time(s))"
     log "------------------------------------------------------------"
 
     for i in $(seq 1 "$RUNS"); do
         log "  Run #$i/$RUNS..."
         total_runs=$((total_runs + 1))
 
-        if "$MEASUREMENT_SCRIPT" "$modelfile"; then
-            log "  ✓ Run #$i completed successfully"
+        # Pass run index only if RUNS > 1 to keep single run output clean
+        if [ "$RUNS" -gt 1 ]; then
+            if "$MEASUREMENT_SCRIPT" "$model_relative" "$i"; then
+                log "  ✓ Run #$i completed successfully"
+            else
+                log "  ✗ Run #$i failed"
+                failed_runs=$((failed_runs + 1))
+            fi
         else
-            log "  ✗ Run #$i failed"
-            failed_runs=$((failed_runs + 1))
+            if "$MEASUREMENT_SCRIPT" "$model_relative"; then
+                log "  ✓ Run #$i completed successfully"
+            else
+                log "  ✗ Run #$i failed"
+                failed_runs=$((failed_runs + 1))
+            fi
         fi
 
         # Short pause between runs to allow device to stabilize
