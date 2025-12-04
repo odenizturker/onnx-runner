@@ -42,8 +42,17 @@ if [ -d "${ONNXRUNTIME_DIR}/jni" ]; then
 fi
 
 echo "Pushing all .onnx models (including subdirectories)..."
-# Use find to get all .onnx files recursively
-find ./models -name "*.onnx" -type f | while read -r model_path; do
+
+# Build array of model files
+model_files=()
+while IFS= read -r -d '' model_path; do
+    model_files+=("$model_path")
+done < <(find ./models -name "*.onnx" -type f -print0)
+
+echo "Found ${#model_files[@]} model file(s)"
+
+# Push each model file
+for model_path in "${model_files[@]}"; do
   # Get path relative to ./models (e.g., "subfolder/model.onnx" or "model.onnx")
   relative_path="${model_path#./models/}"
 
@@ -51,11 +60,13 @@ find ./models -name "*.onnx" -type f | while read -r model_path; do
   model_dir=$(dirname "${relative_path}")
   if [ "${model_dir}" != "." ]; then
     echo "  Creating directory: ${DEVICE_DIR}/${model_dir}"
-    adb shell "mkdir -p ${DEVICE_DIR}/${model_dir}" || true
+    adb shell "mkdir -p ${DEVICE_DIR}/${model_dir}" 2>/dev/null || true
+    echo "  Pushing ${model_path} -> ${DEVICE_DIR}/${model_dir}/"
+    adb push "${model_path}" "${DEVICE_DIR}/${model_dir}/" 2>&1 | grep -v "^$"
+  else
+    echo "  Pushing ${model_path} -> ${DEVICE_DIR}/"
+    adb push "${model_path}" "${DEVICE_DIR}/" 2>&1 | grep -v "^$"
   fi
-
-  echo "  Pushing ${model_path} -> ${DEVICE_DIR}/${relative_path}"
-  adb push "${model_path}" "${DEVICE_DIR}/${relative_path}"
 done
 
 echo "Done. Binary and models are on device."

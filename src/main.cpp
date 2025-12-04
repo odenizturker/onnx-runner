@@ -7,6 +7,7 @@
 #include <random>
 #include <cstdlib>
 #include <onnxruntime_cxx_api.h>
+#include "onnxruntime_c_api.h"
 
 namespace fs = std::filesystem;
 
@@ -28,30 +29,54 @@ void run_onnx_inference(const std::string& model_path) {
         return;
     }
 
-    // Get input shape
-    auto input_name = session.GetInputNameAllocated(0, allocator);
-    auto input_type_info = session.GetInputTypeInfo(0);
-    auto tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> input_shape = tensor_info.GetShape();
-
-    // Calculate input size
-    size_t input_tensor_size = 1;
-    for (auto dim : input_shape) {
-        if (dim < 0) dim = 1; // Handle dynamic dimensions
-        input_tensor_size *= dim;
-    }
-
-    // Prepare input tensor with random values
+    // Prepare random number generator
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
 
-    std::vector<float> input_tensor_values(input_tensor_size);
-    for (size_t i = 0; i < input_tensor_size; ++i) {
-        input_tensor_values[i] = dis(gen);
-    }
+    // Prepare all inputs
+    std::vector<Ort::AllocatedStringPtr> input_name_ptrs;
+    std::vector<const char*> input_names;
+    std::vector<std::vector<float>> input_data_storage;
+    std::vector<std::vector<int64_t>> input_shapes;
+    std::vector<Ort::Value> input_tensors;
 
-    std::vector<const char*> input_names = {input_name.get()};
+    Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+
+    for (size_t i = 0; i < num_input_nodes; ++i) {
+        // Get input name and shape
+        input_name_ptrs.push_back(session.GetInputNameAllocated(i, allocator));
+        input_names.push_back(input_name_ptrs.back().get());
+
+        auto input_type_info = session.GetInputTypeInfo(i);
+        auto tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
+        std::vector<int64_t> input_shape = tensor_info.GetShape();
+
+        // Calculate input size
+        size_t input_tensor_size = 1;
+        for (auto dim : input_shape) {
+            if (dim < 0) dim = 1; // Handle dynamic dimensions
+            input_tensor_size *= dim;
+        }
+
+        // Create random input data
+        std::vector<float> input_tensor_values(input_tensor_size);
+        for (size_t j = 0; j < input_tensor_size; ++j) {
+            input_tensor_values[j] = dis(gen);
+        }
+
+        // Store data and shape
+        input_data_storage.push_back(std::move(input_tensor_values));
+        input_shapes.push_back(input_shape);
+
+        // Create tensor
+        input_tensors.push_back(Ort::Value::CreateTensor<float>(
+            memory_info,
+            input_data_storage.back().data(),
+            input_tensor_size,
+            input_shapes.back().data(),
+            input_shapes.back().size()));
+    }
 
     // Store output names properly to avoid memory issues
     std::vector<Ort::AllocatedStringPtr> output_name_ptrs;
@@ -62,15 +87,10 @@ void run_onnx_inference(const std::string& model_path) {
         output_names.push_back(output_name_ptrs.back().get());
     }
 
-    Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
-        memory_info, input_tensor_values.data(), input_tensor_size,
-        input_shape.data(), input_shape.size());
-
     // Run inference
     auto output_tensors = session.Run(
         Ort::RunOptions{nullptr},
-        input_names.data(), &input_tensor, 1,
+        input_names.data(), input_tensors.data(), num_input_nodes,
         output_names.data(), num_output_nodes);
 }
 

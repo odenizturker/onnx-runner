@@ -42,7 +42,8 @@
 
 .idea
 
-models/*.onnx
+models/*
 measurements/*.txt
 reports/*.txt
 onnxruntime
+onnx/*

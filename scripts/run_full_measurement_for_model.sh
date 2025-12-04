@@ -23,7 +23,7 @@ OUTPUT_DIR="./measurements"
 # Duration configuration
 WARMUP_DURATION=6      # 6 seconds warmup
 SILENT_DURATION=6      # 6 seconds silent period
-MEASUREMENT_DURATION=48 # 48 seconds measurement
+MEASUREMENT_DURATION=98 # 48 seconds measurement
 
 log() {
     echo "[$(date '+%H:%M:%S')] $1"
