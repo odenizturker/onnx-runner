@@ -59,9 +59,9 @@ all: download-onnxruntime
 	@echo "✓ Build complete!"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Deploy to device:			./scripts/push_models_to_device.sh"
-	@echo "2. Run measurement for a model:		./scripts/run_full_measurement_for_model.sh <model.onnx>"
-	@echo "3. Run measurements for all models:	./scripts/run_all_models.sh"
+	@echo "1. Deploy binary:           ./scripts/push_binary_to_device.sh"
+	@echo "2. Measure single model:    ./scripts/measure_model.sh <model.onnx>"
+	@echo "3. Measure all models:      ./scripts/run_all_models.sh <runs>"
 
 # Download ONNX Runtime prebuilt Android package
 download-onnxruntime:
