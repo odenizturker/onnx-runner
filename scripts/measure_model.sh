@@ -70,6 +70,27 @@ STATS_FILE="${OUTPUT_DIR}/${SAFE_FILENAME}_batterystats.txt"
 adb shell dumpsys batterystats > "$STATS_FILE"
 log "  ✓ Battery statistics saved to: $STATS_FILE"
 
+# Collect performance metrics CSV file
+log "Collecting performance metrics..."
+PERF_PATTERN="*_performance.csv"
+# Find the most recent performance file for this model
+DEVICE_PERF_FILE=$(adb shell "ls -t /data/local/tmp/measurements/${SAFE_FILENAME}*_performance.csv 2>/dev/null | head -1" | tr -d '\r')
+
+if [ -n "$DEVICE_PERF_FILE" ]; then
+    # Extract just the filename
+    PERF_FILENAME=$(basename "$DEVICE_PERF_FILE")
+    LOCAL_PERF_FILE="${OUTPUT_DIR}/${PERF_FILENAME}"
+
+    adb pull "$DEVICE_PERF_FILE" "$LOCAL_PERF_FILE" > /dev/null 2>&1
+    if [ -f "$LOCAL_PERF_FILE" ]; then
+        log "  ✓ Performance metrics saved to: $LOCAL_PERF_FILE"
+    else
+        log "  ⚠ Warning: Could not pull performance metrics file"
+    fi
+else
+    log "  ⚠ Warning: No performance metrics file found on device"
+fi
+
 log "============================================================"
 log "Measurement complete for: ${ONNX_RELATIVE_PATH}"
 

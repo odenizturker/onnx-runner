@@ -160,10 +160,17 @@ make
 ./scripts/measure_model.sh model.onnx 2
 ```
 
-#### 4. Parse Results
+#### 4. Generate Reports
 ```bash
-./scripts/parse_measurements.sh
+./scripts/generate_power_report.sh
 ```
+
+**Report includes:**
+- CSV format with all voltage/current samples
+- Performance metrics (iterations, µs/inference)
+- Power and energy calculations
+- Unique identifiers for tracking
+
 
 ## How It Works
 
@@ -217,8 +224,9 @@ onnx-runner/
 │   ├── run_all_models.sh           # Full workflow: build → deploy → measure
 │   ├── measure_model.sh            # Measure single model
 │   ├── push_binary_to_device.sh    # Deploy binary only
+│   ├── generate_power_report.sh    # Generate comprehensive CSV reports
 │   ├── push_models_to_device.sh    # Deploy all models (legacy)
-│   ├── parse_measurements.sh       # Parse results
+│   ├── parse_measurements.sh       # Parse results (legacy)
 │   └── export_batterystats.sh      # Export stats (legacy)
 ├── models/                         # Your ONNX models
 │   ├── zi_t/                       # Organized in subdirectories
@@ -226,19 +234,28 @@ onnx-runner/
 │   │   └── relu_model.onnx
 │   └── zi_f/
 │       └── another_model.onnx
-├── measurements/                   # Raw battery statistics
-├── reports/                        # Parsed CSV reports
+├── measurements/                   # Raw measurements (JSON + batterystats)
+├── reports/                        # Generated CSV and summary reports
 ├── onnxruntime/                    # ONNX Runtime libraries
 ├── Makefile                        # Build configuration
-└── README.md                       # This file
+├── README.md                       # This file
+└── REPORTING.md                    # Detailed reporting documentation
 ```
 
 ## Output Files
 
 ### measurements/ Directory
 
-Raw battery statistics for each run:
+Contains raw measurement data:
 
+**Performance metrics (JSON):**
+```
+measurements/
+├── zi_t_conv_model.onnx_20251209_143052_performance.json
+└── zi_f_another_model.onnx_20251209_150000_performance.json
+```
+
+**Battery statistics (TXT):**
 ```
 measurements/
 ├── zi_t_conv_model.onnx_batterystats.txt
@@ -246,19 +263,32 @@ measurements/
 └── zi_f_another_model.onnx_batterystats.txt
 ```
 
-Naming:
-- Single run: `<model_path>_batterystats.txt`
-- Multiple runs: `<model_path>_run<N>_batterystats.txt`
+**Naming conventions:**
+- Performance: `<model_path>_<timestamp>_performance.json`
+- Battery (single): `<model_path>_batterystats.txt`
+- Battery (multi): `<model_path>_run<N>_batterystats.txt`
 
 ### reports/ Directory
 
-Parsed CSV reports:
+Generated analysis reports:
 
+**Comprehensive CSV reports:**
 ```
 reports/
-├── power_measurements.csv
-└── detailed_stats.csv
+├── power_report_20251209_150000.csv      # All measurements
+└── summary_20251209_150000.txt           # Human-readable summary
 ```
+
+**Legacy text reports:**
+```
+reports/
+├── model_name_report.txt
+└── another_model_report.txt
+```
+
+**CSV includes:** voltage/current lists, power, energy, iterations, µs/inference
+
+📖 See [REPORTING.md](REPORTING.md) for complete CSV format documentation.
 
 ## Configuration
 
