@@ -234,6 +234,7 @@ int main(int argc, char **argv) {
     std::cout << "=== Starting 3-Phase Benchmark ===\n";
     std::cout << "Model: " << model_filename << "\n";
     std::cout << "Timestamp: " << timestamp << "\n";
+    std::cout << "BENCHMARK_TIMESTAMP=" << timestamp << "\n";  // For script parsing
     std::cout << "Phase 1 (Warmup): " << warmup_seconds << "s\n";
     std::cout << "Phase 2 (Silence): " << silence_seconds << "s\n";
     std::cout << "Phase 3 (Measurement): " << measurement_seconds << "s\n";

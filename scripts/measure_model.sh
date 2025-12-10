@@ -59,14 +59,32 @@ fi
 # Run all three phases in a single program execution
 # This keeps caches warm across phases
 log "Running benchmark (warmup → silence → reset → measurement)..."
-adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ${DEVICE_BIN} models/${ONNX_RELATIVE_PATH} ${WARMUP_DURATION} ${SILENT_DURATION} ${MEASUREMENT_DURATION}" || {
+BENCHMARK_OUTPUT=$(adb shell "cd /data/local/tmp && LD_LIBRARY_PATH=. ${DEVICE_BIN} ${ONNX_RELATIVE_PATH} ${WARMUP_DURATION} ${SILENT_DURATION} ${MEASUREMENT_DURATION}" 2>&1)
+BENCHMARK_EXIT_CODE=$?
+
+# Print the output
+echo "$BENCHMARK_OUTPUT"
+
+if [ $BENCHMARK_EXIT_CODE -ne 0 ]; then
     log "  ✗ Benchmark failed"
     exit 1
-}
+fi
+
+# Extract timestamp from the output
+BENCHMARK_TIMESTAMP=$(echo "$BENCHMARK_OUTPUT" | grep "BENCHMARK_TIMESTAMP=" | cut -d'=' -f2 | tr -d '\r\n ')
+
+if [ -z "$BENCHMARK_TIMESTAMP" ]; then
+    log "  ⚠ Warning: Could not extract timestamp from benchmark output, using default naming"
+    BENCHMARK_TIMESTAMP=""
+fi
 
 # Collect battery statistics
 log "Collecting battery statistics..."
-STATS_FILE="${OUTPUT_DIR}/${SAFE_FILENAME}_batterystats.txt"
+if [ -n "$BENCHMARK_TIMESTAMP" ]; then
+    STATS_FILE="${OUTPUT_DIR}/${SAFE_FILENAME}_${BENCHMARK_TIMESTAMP}_batterystats.txt"
+else
+    STATS_FILE="${OUTPUT_DIR}/${SAFE_FILENAME}_batterystats.txt"
+fi
 adb shell dumpsys batterystats > "$STATS_FILE"
 log "  ✓ Battery statistics saved to: $STATS_FILE"
 
