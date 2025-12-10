@@ -22,15 +22,27 @@ This project helps you:
 The fastest way to get started:
 
 ```bash
-# 1. Prepare your models
+# 1. Install Python dependencies
+pip3 install --break-system-packages -r requirements.txt
+
+# 2. Prepare your models
 mkdir -p models
 cp /path/to/your/model.onnx models/
 
-# 2. Build and run measurements on all models
+# 3. Build and run measurements on all models
 ./scripts/run_all_models.sh 3    # Run each model 3 times
+
+# 4. Parse measurements into DataFrame
+python3 scripts/parse_measurements.py
+
+# 5. Visualize the results
+python3 visualize_measurements.py
 ```
 
-That's it! Results will be in `./measurements/`
+That's it! Results will be in:
+- `./measurements/` - Raw data (CSV + TXT)
+- `./reports/measurements_data_<timestamp>.pkl` - DataFrame
+- `./reports/plots/` - Visualization plots (PNG)
 
 ## Setup
 
@@ -160,16 +172,23 @@ make
 ./scripts/measure_model.sh model.onnx 2
 ```
 
-#### 4. Generate Reports
+#### 4. Parse Measurements into DataFrame
 ```bash
-./scripts/generate_power_report.sh
+python3 scripts/parse_measurements.py
 ```
 
-**Report includes:**
-- CSV format with all voltage/current samples
-- Performance metrics (iterations, µs/inference)
-- Power and energy calculations
-- Unique identifiers for tracking
+**Output:**
+- Creates `reports/measurements_data_<timestamp>.pkl` - Pandas DataFrame with all measurements
+- Contains: current_list, voltage_list, filename, date_time, avg_power, iterations, usperinf, totaltimesec, energy
+- Timestamp format: YYYYMMDD_HHMMSS (e.g., `measurements_data_20251210_154500.pkl`)
+
+**Load the DataFrame in Python:**
+```python
+import pandas as pd
+# Use the actual filename with timestamp
+df = pd.read_pickle('./reports/measurements_data_20251210_154500.pkl')
+print(df.head())
+```
 
 
 ## How It Works
@@ -224,22 +243,22 @@ onnx-runner/
 │   ├── run_all_models.sh           # Full workflow: build → deploy → measure
 │   ├── measure_model.sh            # Measure single model
 │   ├── push_binary_to_device.sh    # Deploy binary only
-│   ├── generate_power_report.sh    # Generate comprehensive CSV reports
-│   ├── push_models_to_device.sh    # Deploy all models (legacy)
-│   ├── parse_measurements.sh       # Parse results (legacy)
-│   └── export_batterystats.sh      # Export stats (legacy)
+│   └── parse_measurements.py       # Parse measurements into DataFrame (pickle)
 ├── models/                         # Your ONNX models
 │   ├── zi_t/                       # Organized in subdirectories
 │   │   ├── conv_model.onnx
 │   │   └── relu_model.onnx
 │   └── zi_f/
 │       └── another_model.onnx
-├── measurements/                   # Raw measurements (JSON + batterystats)
-├── reports/                        # Generated CSV and summary reports
+├── measurements/                   # Raw measurements
+│   ├── *_performance.csv           # Performance metrics (CSV)
+│   └── *_batterystats.txt          # Battery statistics
+├── reports/                        # Parsed DataFrames
+│   └── measurements_data_*.pkl     # Timestamped DataFrame files
 ├── onnxruntime/                    # ONNX Runtime libraries
 ├── Makefile                        # Build configuration
-├── README.md                       # This file
-└── REPORTING.md                    # Detailed reporting documentation
+├── requirements.txt                # Python dependencies (pandas)
+└── README.md                       # This file
 ```
 
 ## Output Files
@@ -248,47 +267,70 @@ onnx-runner/
 
 Contains raw measurement data:
 
-**Performance metrics (JSON):**
+**Performance metrics (CSV):**
 ```
 measurements/
-├── zi_t_conv_model.onnx_20251209_143052_performance.json
-└── zi_f_another_model.onnx_20251209_150000_performance.json
+├── conv_model_20251210_143052_performance.csv
+└── another_model_20251210_150000_performance.csv
 ```
 
 **Battery statistics (TXT):**
 ```
 measurements/
-├── zi_t_conv_model.onnx_batterystats.txt
-├── zi_t_conv_model.onnx_run2_batterystats.txt
-└── zi_f_another_model.onnx_batterystats.txt
+├── conv_model_20251210_143052_batterystats.txt
+└── another_model_20251210_150000_batterystats.txt
 ```
-
-**Naming conventions:**
-- Performance: `<model_path>_<timestamp>_performance.json`
-- Battery (single): `<model_path>_batterystats.txt`
-- Battery (multi): `<model_path>_run<N>_batterystats.txt`
 
 ### reports/ Directory
 
-Generated analysis reports:
+Contains parsed DataFrames:
 
-**Comprehensive CSV reports:**
+**Parsed DataFrame (PKL):**
 ```
 reports/
-├── power_report_20251209_150000.csv      # All measurements
-└── summary_20251209_150000.txt           # Human-readable summary
+├── measurements_data_20251210_154500.pkl
+└── measurements_data_20251210_160000.pkl
 ```
 
-**Legacy text reports:**
-```
-reports/
-├── model_name_report.txt
-└── another_model_report.txt
-```
+**Naming conventions:**
+- Performance (measurements/): `<sanitized_model>_<timestamp>_performance.csv`
+- Battery (measurements/): `<sanitized_model>_<timestamp>_batterystats.txt`
+- DataFrame (reports/): `measurements_data_<timestamp>.pkl`
+  - Timestamp represents when the parsing script was executed
+  - Format: YYYYMMDD_HHMMSS
 
-**CSV includes:** voltage/current lists, power, energy, iterations, µs/inference
+**DataFrame includes all data with columns:**
+- `current_list`: List of current samples (mA)
+- `voltage_list`: List of voltage samples (mV)
+- `filename`: Model path (e.g., "zi_t/model.onnx")
+- `date_time`: Timestamp of measurement (YYYYMMDD_HHMMSS)
+- `avg_power`: Average power (W)
+- `iterations`: Number of inferences
+- `usperinf`: Microseconds per inference
+- `totaltimesec`: Total measurement time (seconds)
+- `energy`: Total energy consumed (Wh)
 
-📖 See [REPORTING.md](REPORTING.md) for complete CSV format documentation.
+### Working with the DataFrame
+
+```python
+import pandas as pd
+
+# Load DataFrame (use your actual timestamp)
+df = pd.read_pickle('./reports/measurements_data_20251210_154500.pkl')
+
+# Basic info
+print(f"Total measurements: {len(df)}")
+print(f"Unique models: {df['filename'].nunique()}")
+
+# Filter by model
+conv_models = df[df['filename'].str.contains('conv')]
+
+# Calculate statistics
+avg_power_by_model = df.groupby('filename')['avg_power'].mean()
+
+# Export to CSV for analysis in Excel/R
+df.to_csv('measurements_export.csv', index=False)
+```
 
 ## Configuration
 

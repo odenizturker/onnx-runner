@@ -152,6 +152,6 @@ log "Failed: $failed_runs"
 log "Results saved in ./measurements/"
 log ""
 log "Next steps:"
-log "  Parse results: ./scripts/parse_measurements.sh"
+log "  Parse results: python3 ./scripts/parse_measurements.py"
 log "============================================================"
 
