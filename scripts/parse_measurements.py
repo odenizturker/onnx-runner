@@ -11,7 +11,7 @@ Output columns:
 - current_list: List of current samples in mA
 - voltage_list: List of voltage samples in mV
 - avg_power: Average power consumption in Watts
-- energy: Total energy consumed in Watt-hours
+- energy: Energy per single inference in Watt-hours
 - iterations: Number of inference iterations
 - usperinf: Microseconds per inference
 - totaltimesec: Total measurement time in seconds
@@ -153,7 +153,7 @@ def process_measurements(measurements_dir: Path) -> pd.DataFrame:
     - current_list: List of current samples
     - voltage_list: List of voltage samples
     - avg_power: Average power (W)
-    - energy: Total energy (Wh)
+    - energy: Energy per single inference (Wh)
     - iterations: Number of inferences
     - usperinf: Microseconds per inference
     - totaltimesec: Total time (seconds)
@@ -194,6 +194,11 @@ def process_measurements(measurements_dir: Path) -> pd.DataFrame:
             skipped += 1
             continue
 
+        # Calculate energy per inference
+        # Energy per inference (Wh) = Power (W) * Time per inference (s) / 3600
+        time_per_inf_sec = perf_data['us_per_inference'] / 1_000_000.0  # Convert µs to seconds
+        energy_per_inf = (battery_data['avg_power'] * time_per_inf_sec) / 3600.0
+
         # Create record
         record = {
             'filename': perf_data['model'],
@@ -201,10 +206,10 @@ def process_measurements(measurements_dir: Path) -> pd.DataFrame:
             'current_list': battery_data['current_list'],
             'voltage_list': battery_data['voltage_list'],
             'avg_power': battery_data['avg_power'],
-            'energy': battery_data['energy'],
             'iterations': perf_data['iterations'],
             'usperinf': perf_data['us_per_inference'],
             'totaltimesec': perf_data['total_time_sec'],
+            'energy': energy_per_inf,
         }
 
         records.append(record)

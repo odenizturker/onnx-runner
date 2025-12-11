@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# Run all ONNX models in ./models/ directory multiple times
-# Full flow: build → push model → measure → repeat
-# Usage: ./scripts/run_all_models.sh <runs>
-# Example: ./scripts/run_all_models.sh 2    # run each model twice
+# Run all ONNX models in ./models/ directory once
+# Full flow: build → push model → measure
+# Usage: ./scripts/run_all_models.sh
 
 set -euo pipefail
 
-RUNS="${1:-1}"
-
-# Validate RUNS is a positive integer
-if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Usage: $0 <positive-integer>"
-    echo "Example: $0 2    # run each model 2 times"
-    exit 1
-fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MEASUREMENT_SCRIPT="$SCRIPT_DIR/measure_model.sh"
@@ -56,8 +47,6 @@ log "============================================================"
 log "ONNX Model Power Measurement - Full Benchmark"
 log "============================================================"
 log "Models to measure: ${#models[@]}"
-log "Runs per model: $RUNS"
-log "Total measurements: $((${#models[@]} * RUNS))"
 log ""
 
 # Step 1: Build the binary
@@ -89,13 +78,16 @@ log ""
 
 total_runs=0
 failed_runs=0
+model_count=0
+total_models=${#models[@]}
 
 # Iterate through each model
 for modelpath in "${models[@]}"; do
     # Get path relative to models/ directory (e.g., "subfolder/model.onnx" or "model.onnx")
     model_relative="${modelpath#$MODEL_DIR/}"
+    model_count=$((model_count + 1))
 
-    log "Model: $model_relative (running $RUNS time(s))"
+    log "Model $model_count/$total_models: $model_relative"
     log "------------------------------------------------------------"
 
     # Push this specific model to device
@@ -112,33 +104,17 @@ for modelpath in "${models[@]}"; do
 
     log "  ✓ Model pushed to device"
 
-    # Run measurements for this model
-    for i in $(seq 1 "$RUNS"); do
-        log "  Run #$i/$RUNS..."
-        total_runs=$((total_runs + 1))
+    # Run measurement for this model
+    log "  Running measurement..."
+    total_runs=$((total_runs + 1))
 
-        # Pass run index only if RUNS > 1 to keep single run output clean
-        if [ "$RUNS" -gt 1 ]; then
-            if "$MEASUREMENT_SCRIPT" "$model_relative" "$i"; then
-                log "  ✓ Run #$i completed successfully"
-            else
-                log "  ✗ Run #$i failed"
-                failed_runs=$((failed_runs + 1))
-            fi
-        else
-            if "$MEASUREMENT_SCRIPT" "$model_relative"; then
-                log "  ✓ Run #$i completed successfully"
-            else
-                log "  ✗ Run #$i failed"
-                failed_runs=$((failed_runs + 1))
-            fi
-        fi
+    if "$MEASUREMENT_SCRIPT" "$model_relative"; then
+        log "  ✓ Measurement completed successfully"
+    else
+        log "  ✗ Measurement failed"
+        failed_runs=$((failed_runs + 1))
+    fi
 
-        # Short pause between runs to allow device to stabilize
-        if [ "$i" -lt "$RUNS" ]; then
-            sleep 2
-        fi
-    done
 
     log ""
 done

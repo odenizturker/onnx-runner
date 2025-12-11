@@ -8,15 +8,14 @@
 
 set -euo pipefail
 
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "Usage: $0 <onnx_path_relative_to_models> [run_index]"
+if [ $# -ne 1 ]; then
+  echo "Usage: $0 <onnx_path_relative_to_models>"
   echo "Example: $0 model.onnx"
-  echo "Example: $0 zi_t/model.onnx 2"
+  echo "Example: $0 zi_t/model.onnx"
   exit 1
 fi
 
 ONNX_RELATIVE_PATH="$1"
-RUN_INDEX="${2:-}"  # Optional run index
 DEVICE_BIN="/data/local/tmp/onnx_runner"
 DEVICE_MODEL_PATH="/data/local/tmp/models/${ONNX_RELATIVE_PATH}"
 OUTPUT_DIR="./measurements"
@@ -39,10 +38,6 @@ fi
 # Create safe filename for output (replace / with _)
 SAFE_FILENAME="${ONNX_RELATIVE_PATH//\//_}"
 
-# Add run index to filename if provided
-if [ -n "$RUN_INDEX" ]; then
-    SAFE_FILENAME="${SAFE_FILENAME}_run${RUN_INDEX}"
-fi
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -90,9 +85,8 @@ log "  ✓ Battery statistics saved to: $STATS_FILE"
 
 # Collect performance metrics CSV file
 log "Collecting performance metrics..."
-PERF_PATTERN="*_performance.csv"
-# Find the most recent performance file for this model
-DEVICE_PERF_FILE=$(adb shell "ls -t /data/local/tmp/measurements/${SAFE_FILENAME}*_performance.csv 2>/dev/null | head -1" | tr -d '\r')
+# Find the performance file using the timestamp
+DEVICE_PERF_FILE=$(adb shell "ls -t /data/local/tmp/measurements/${SAFE_FILENAME}_${BENCHMARK_TIMESTAMP}_performance.csv 2>/dev/null | head -1" | tr -d '\r')
 
 if [ -n "$DEVICE_PERF_FILE" ]; then
     # Extract just the filename
